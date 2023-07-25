@@ -6,6 +6,7 @@ import { EnumResourceType } from "./models";
 import { prepareContext } from "./prepare-context";
 import { createServer } from "./server/create-server";
 import { ILogger } from "@amplication/util/logging";
+import { Tracing } from "./tracing";
 
 export async function createDataService(
   dSGResourceData: DSGResourceData,
@@ -39,13 +40,13 @@ export async function createDataService(
     const { appInfo } = context;
     const { settings } = appInfo;
 
-    const serverModules = await createServer();
+    const serverModules = await Tracing.wrapAsync(createServer);
 
     const { adminUISettings } = settings;
     const { generateAdminUI } = adminUISettings;
 
     const adminUIModules =
-      (generateAdminUI && (await createAdminModules())) ||
+      (generateAdminUI && (await Tracing.wrapAsync(createAdminModules))) ||
       new ModuleMap(context.logger);
 
     const modules = serverModules;

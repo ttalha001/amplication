@@ -33,6 +33,7 @@ import { createUpdateManyWithoutInputDTOs } from "./dto/nested-input-dto/update-
 import { createEntityListRelationFilter } from "./dto/graphql/entity-list-relation-filter/create-entity-list-relation-filter";
 import pluginWrapper from "../../plugin-wrapper";
 import DsgContext from "../../dsg-context";
+import { Tracing } from "../../tracing";
 
 export async function createDTOModules(dtos: DTOs): Promise<ModuleMap> {
   return pluginWrapper(createDTOModulesInternal, EventNames.CreateDTOs, {
@@ -80,44 +81,61 @@ export function getDTONameToPath(dtos: DTOs): Record<string, string> {
 }
 
 export async function createDTOs(entities: Entity[]): Promise<DTOs> {
-  const entitiesDTOsMap = await Promise.all(
-    entities.map(async (entity) => {
-      const entityDTOs = await createEntityDTOs(entity);
-      const entityEnumDTOs = createEntityEnumDTOs(entity);
-      const toManyDTOs = createToManyDTOs(entity);
-      const dtos = {
-        ...entityDTOs,
-        ...entityEnumDTOs,
-        ...toManyDTOs,
-      };
-      return [entity.name, dtos];
-    })
-  );
-  return Object.fromEntries(entitiesDTOsMap);
+  const result: DTOs = {};
+  for await (const entity of entities) {
+    const entityDTOs = await Tracing.wrapAsync(createEntityDTOs, entity);
+    const entityEnumDTOs = Tracing.wrap(createEntityEnumDTOs, entity);
+    const toManyDTOs = Tracing.wrap(createToManyDTOs, entity);
+    result[entity.name] = {
+      ...entityDTOs,
+      ...entityEnumDTOs,
+      ...toManyDTOs,
+    } as unknown as EntityEnumDTOs & EntityDTOs;
+  }
+  return result;
 }
 
 async function createEntityDTOs(entity: Entity): Promise<EntityDTOs> {
-  const entityDTO = createEntityDTO(entity);
-  const createInput = createCreateInput(entity);
-  const updateInput = createUpdateInput(entity);
-  const whereInput = createWhereInput(entity);
-  const whereUniqueInput = createWhereUniqueInput(entity);
-  const createArgs = await createCreateArgs(entity, createInput);
-  const orderByInput = await createOrderByInput(entity);
-  const deleteArgs = await createDeleteArgs(entity, whereUniqueInput);
-  const countArgs = await createCountArgs(entity, whereInput);
-  const findManyArgs = await createFindManyArgs(
+  const entityDTO = Tracing.wrap(createEntityDTO, entity);
+  const createInput = Tracing.wrap(createCreateInput, entity);
+  const updateInput = Tracing.wrap(createUpdateInput, entity);
+  const whereInput = Tracing.wrap(createWhereInput, entity);
+  const whereUniqueInput = Tracing.wrap(createWhereUniqueInput, entity);
+  const createArgs = await Tracing.wrapAsync(
+    createCreateArgs,
+    entity,
+    createInput
+  );
+  const orderByInput = await Tracing.wrapAsync(createOrderByInput, entity);
+  const deleteArgs = await Tracing.wrapAsync(
+    createDeleteArgs,
+    entity,
+    whereUniqueInput
+  );
+  const countArgs = await Tracing.wrapAsync(
+    createCountArgs,
+    entity,
+    whereInput
+  );
+  const findManyArgs = await Tracing.wrapAsync(
+    createFindManyArgs,
     entity,
     whereInput,
     orderByInput
   );
-  const findOneArgs = await createFindOneArgs(entity, whereUniqueInput);
-  const updateArgs = await createUpdateArgs(
+  const findOneArgs = await Tracing.wrapAsync(
+    createFindOneArgs,
+    entity,
+    whereUniqueInput
+  );
+  const updateArgs = await Tracing.wrapAsync(
+    createUpdateArgs,
     entity,
     whereUniqueInput,
     updateInput
   );
-  const listRelationFilter = await createEntityListRelationFilter(
+  const listRelationFilter = await Tracing.wrapAsync(
+    createEntityListRelationFilter,
     entity,
     whereInput
   );

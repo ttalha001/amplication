@@ -22,6 +22,7 @@ import { createDockerComposeFile } from "./docker-compose/create-docker-compose"
 import pluginWrapper from "../plugin-wrapper";
 import { createAuthModules } from "./auth/create-auth";
 import { createGitIgnore } from "./gitignore/create-gitignore";
+import { Tracing } from "../tracing";
 
 const STATIC_DIRECTORY = path.resolve(__dirname, "static");
 
@@ -52,12 +53,15 @@ async function createServerInternal(
   const packageJsonModule = await createServerPackageJson();
 
   await context.logger.info("Creating DTOs...");
-  const dtos = await createDTOs(context.entities);
+  const dtos = await Tracing.wrapAsync(createDTOs, context.entities);
   context.DTOs = dtos;
-  const dtoModules = await createDTOModules(dtos);
+  const dtoModules = await Tracing.wrapAsync(createDTOModules, dtos);
 
   await context.logger.info("Creating resources...");
-  const resourcesModules = await createResourcesModules(entities);
+  const resourcesModules = await Tracing.wrapAsync(
+    createResourcesModules,
+    entities
+  );
 
   await context.logger.info("Creating auth module...");
   const authModules = await createAuthModules();
