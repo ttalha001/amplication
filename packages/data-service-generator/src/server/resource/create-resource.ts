@@ -13,6 +13,7 @@ import { createEntityControllerSpec } from "./test/create-controller-spec";
 import { createResolverModules } from "./resolver/create-resolver";
 import { builders } from "ast-types";
 import DsgContext from "../../dsg-context";
+import { Tracing } from "../../tracing";
 
 export async function createResourcesModules(
   entities: Entity[]
@@ -30,7 +31,7 @@ async function createResourceModules(entity: Entity): Promise<ModuleMap> {
   const context = DsgContext.getInstance;
   const { appInfo } = context;
 
-  validateEntityName(entity);
+  Tracing.wrap(validateEntityName, entity);
 
   await context.logger.info(`Creating ${entityType}...`);
   const entityName = camelCase(entityType);

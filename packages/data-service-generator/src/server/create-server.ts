@@ -26,7 +26,7 @@ import { Tracing } from "../tracing";
 
 const STATIC_DIRECTORY = path.resolve(__dirname, "static");
 
-export function createServer(): Promise<ModuleMap> {
+export async function createServer(): Promise<ModuleMap> {
   return pluginWrapper(createServerInternal, EventNames.CreateServer, {});
 }
 

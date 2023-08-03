@@ -4,7 +4,8 @@ import { Tracing } from "./tracing";
 
 if (require.main === module) {
   Tracing.init();
-  generateCode().catch(async (err) => {
+
+  Tracing.wrapAsync(generateCode).catch(async (err) => {
     logger.error(err);
     process.exit(1);
   });

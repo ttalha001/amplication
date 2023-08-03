@@ -3,13 +3,22 @@ import { Resource } from "@opentelemetry/resources";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { FsInstrumentation } from "@opentelemetry/instrumentation-fs";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 
 export class Tracing {
   static init() {
     registerInstrumentations({
-      instrumentations: [],
+      instrumentations: [
+        new HttpInstrumentation({
+          requireParentforIncomingSpans: true,
+        }),
+        new FsInstrumentation({
+          requireParentSpan: true,
+        }),
+      ],
     });
 
     const resource = Resource.default().merge(

@@ -68,7 +68,7 @@ const pluginWrapper: PluginWrapper = async (
     context.utils.abort = false;
 
     if (!context.plugins.hasOwnProperty(event)) {
-      return await func(args);
+      return util.types.isAsyncFunction(func) ? await func(args) : func(args);
     }
     const beforePlugins = context.plugins[event]?.before || [];
     const afterPlugins = context.plugins[event]?.after || [];

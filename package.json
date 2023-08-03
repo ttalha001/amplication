@@ -71,6 +71,7 @@
     "@octokit/webhooks-types": "^6.9.0",
     "@opentelemetry/exporter-metrics-otlp-grpc": "^0.40.0",
     "@opentelemetry/exporter-trace-otlp-grpc": "^0.40.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.41.1",
     "@opentelemetry/id-generator-aws-xray": "^1.1.2",
     "@opentelemetry/instrumentation-aws-sdk": "^0.34.3",
     "@opentelemetry/propagator-aws-xray": "^1.2.1",
@@ -179,12 +180,12 @@
     "tar-stream": "^2.2.0",
     "ts-morph": "^17.0.1",
     "tslib": "^2.5.0",
+    "type-fest": "^3.11.0",
     "use-debounce": "^3.4.3",
     "uuid": "^8.3.2",
     "winston": "3.8.2",
     "winston-cloud-logging": "^1.0.2",
-    "yaml": "2.2.2",
-    "type-fest": "^3.11.0"
+    "yaml": "2.2.2"
   },
   "devDependencies": {
     "@babel/core": "7.12.13",
