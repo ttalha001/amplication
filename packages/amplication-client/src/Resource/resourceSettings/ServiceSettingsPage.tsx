@@ -30,6 +30,14 @@ const ServiceSettingsPage: React.FC<{}> = () => {
       </div>
       <div>
         <InnerTabLink
+          to={`/${currentWorkspace?.id}/${currentProject?.id}/${currentResource?.id}/settings/code-generator-version/update`}
+          icon="code"
+        >
+          Code Generator Version
+        </InnerTabLink>
+      </div>
+      <div>
+        <InnerTabLink
           to={`/${currentWorkspace?.id}/${currentProject?.id}/${currentResource?.id}/settings/directories/update`}
           icon="settings"
         >
