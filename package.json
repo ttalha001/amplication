@@ -1,8 +1,6 @@
 {
   "name": "amplication",
-  "version": "1.8.10",
   "scripts": {
-    "postinstall": "nx run-many --target=install",
     "format:check": "npx nx format:check --all",
     "format:write": "npx nx format:write --all",
     "build": "nx run-many --target=build",
@@ -21,6 +19,7 @@
     "serve:git": "nx run-many --parallel --target=serve --projects=git-sync-manager",
     "serve:storage": "npx nx serve amplication-storage-gateway",
     "serve:plugins": "npx nx serve amplication-plugin-api",
+    "serve:notification": "npx nx serve amplication-notification",
     "debug:dsg": "npx nx generate-local-code data-service-generator"
   },
   "lint-staged": {
@@ -59,6 +58,8 @@
     "@nestjs/platform-express": "^9.3.9",
     "@nestjs/serve-static": "^3.0.1",
     "@nestjs/swagger": "^6.2.1",
+    "@novu/node": "^0.18.0",
+    "@novu/notification-center": "^0.18.0",
     "@ntegral/nestjs-sendgrid": "^1.0.0",
     "@octokit/app": "^13.1.1",
     "@octokit/auth-app": "^4.0.8",
@@ -97,6 +98,7 @@
     "core-js": "^3.6.5",
     "cron": "^2.3.0",
     "cronstrue": "^1.125.0",
+    "crypto-js": "^4.1.1",
     "cuid": "^2.1.8",
     "date-fns": "^2.29.3",
     "deepdash": "^5.3.9",
@@ -184,7 +186,8 @@
     "uuid": "^8.3.2",
     "winston": "3.8.2",
     "winston-cloud-logging": "^1.0.2",
-    "yaml": "2.2.2"
+    "yaml": "2.2.2",
+    "openai": "^3.3.0"
   },
   "devDependencies": {
     "@babel/core": "7.12.13",
@@ -197,7 +200,7 @@
     "@nestjs/schematics": "^9.1.0",
     "@nestjs/testing": "^9.4.0",
     "@nrwl/cypress": "15.4.5",
-    "@nrwl/devkit": "^15.4.5",
+    "@nrwl/devkit": "15.4.5",
     "@nrwl/eslint-plugin-nx": "15.4.5",
     "@nrwl/express": "15.4.5",
     "@nrwl/jest": "15.4.5",
