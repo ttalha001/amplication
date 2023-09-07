@@ -1,0 +1,26 @@
+@import "../../../style/index.scss";
+
+.code-generator-version-strategy {
+  &__container {
+    display: flex;
+    padding: var(--default-spacing);
+  }
+
+  &__top-section {
+    display: flex;
+  }
+
+  &__toggle-label {
+    margin: 0 var(--default-spacing);
+  }
+
+  &__title {
+    font-size: 18px;
+    font-weight: 500;
+  }
+
+  &__description {
+    font-size: 12px;
+    font-weight: 100;
+  }
+}

@@ -24,7 +24,10 @@ const resourceSettingsRoutes = [
   {
     path: "/:workspace([A-Za-z0-9-]{20,})/:project([A-Za-z0-9-]{20,})/:resource([A-Za-z0-9-]{20,})/settings/code-generator-version/update",
     Component: lazy(
-      () => import("../Resource/resourceSettings/CodeGeneratorVersionForm")
+      () =>
+        import(
+          "../Resource/resourceSettings/codeGeneratorVersion/CodeGeneratorVersionForm"
+        )
     ),
     moduleName: "",
     routeTrackType: "",
