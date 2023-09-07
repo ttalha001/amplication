@@ -2,6 +2,8 @@ import * as models from "../../../models";
 import { Icon, SelectField, Toggle } from "@amplication/ui/design-system";
 import { useCallback } from "react";
 import "./CodeGeneratorVersionStrategy.scss";
+import { BillingFeature } from "../../../util/BillingFeature";
+import { useStiggContext } from "@stigg/react-sdk";
 
 const CLASS_NAME = "code-generator-version-strategy";
 
@@ -60,6 +62,11 @@ export const CodeGeneratorVersionStrategy: React.FC<
   onStrategyChange,
   savedStrategy,
 }) => {
+  const { stigg } = useStiggContext();
+  const canChooseCodeGeneratorVersion = stigg.getBooleanEntitlement({
+    featureId: BillingFeature.CodeGeneratorVersion,
+  }).hasAccess;
+
   const onValueChange = useCallback(
     (checked: boolean) => {
       if (!checked) {
@@ -81,7 +88,9 @@ export const CodeGeneratorVersionStrategy: React.FC<
           <div className={`${CLASS_NAME}__title`}>{title}</div>
           <div className={`${CLASS_NAME}__description`}>{description}</div>
         </div>
-        <Icon className={`${CLASS_NAME}__icon`} icon={iconName} />
+        {!canChooseCodeGeneratorVersion && (
+          <Icon className={`${CLASS_NAME}__icon`} icon={iconName} />
+        )}
       </div>
       {versionList && versionList.length && (
         <div>
