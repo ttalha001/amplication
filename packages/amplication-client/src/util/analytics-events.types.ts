@@ -58,6 +58,7 @@ export enum AnalyticsEventNames {
   MessageBrokerCreate = "createResourceClick-MessageBroker",
   ProjectConfigurationCreate = "createResourceClick-ProjectConfiguration",
   ServiceCreate = "createResourceClick-Service",
+  CodeGeneratorVersionUpdate = "updateCodeGeneratorVersion",
 
   // entity
 
