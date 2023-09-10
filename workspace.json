@@ -16,6 +16,7 @@
     "data-service-generator-catalog": "packages/data-service-generator-catalog",
     "git-sync-manager": "ee/packages/git-sync-manager",
     "gpt-gateway": "packages/gpt-gateway",
+    "gpt-gateway-admin": "packages/gpt-gateway-admin",
     "local-data-service-generator-controller": "packages/local-data-service-generator-controller",
     "notification-service": "packages/notification-service",
     "schema-registry": "libs/schema-registry",
