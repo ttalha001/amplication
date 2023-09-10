@@ -1,0 +1,182 @@
+{
+  "name": "gpt-gateway-admin",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/gpt-gateway-admin/src",
+  "projectType": "application",
+  "targets": {
+    "update-version": {
+      "executor": "nx:run-commands",
+      "inputs": ["{workspaceRoot}/package.json"],
+      "outputs": ["{projectRoot}/src/util/version.ts"],
+      "options": {
+        "command": "ts-node ./scripts/update-version.ts {args.version}",
+        "cwd": "packages/gpt-gateway-admin"
+      }
+    },
+    "build": {
+      "executor": "@nrwl/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "dependsOn": [
+        "prebuild",
+        "^build",
+        "db:prisma:generate",
+        "^db:prisma:generate",
+        "^graphql:models:generate"
+      ],
+      "options": {
+        "compiler": "babel",
+        "outputPath": "dist/packages/gpt-gateway-admin",
+        "index": "packages/gpt-gateway-admin/public/index.html",
+        "baseHref": "/",
+        "main": "packages/gpt-gateway-admin/src/index.tsx",
+        "polyfills": "packages/gpt-gateway-admin/src/polyfills.ts",
+        "tsConfig": "packages/gpt-gateway-admin/tsconfig.app.json",
+        "assets": [
+          {
+            "glob": "**/*",
+            "input": "packages/gpt-gateway-admin/public",
+            "output": "./"
+          }
+        ],
+        "styles": ["packages/gpt-gateway-admin/src/index.scss"],
+        "scripts": [],
+        "webpackConfig": "@nrwl/react/plugins/webpack"
+      },
+      "configurations": {
+        "development": {
+          "extractLicenses": false,
+          "optimization": false,
+          "sourceMap": true,
+          "vendorChunk": true
+        },
+        "sandbox": {
+          "fileReplacements": [
+            {
+              "replace": "packages/gpt-gateway-admin/src/environments/environment.ts",
+              "with": "packages/gpt-gateway-admin/src/environments/environment.sandbox.ts"
+            }
+          ],
+          "optimization": true,
+          "outputHashing": "all",
+          "sourceMap": false,
+          "namedChunks": false,
+          "extractLicenses": true,
+          "vendorChunk": true
+        },
+        "staging": {
+          "fileReplacements": [
+            {
+              "replace": "packages/gpt-gateway-admin/src/environments/environment.ts",
+              "with": "packages/gpt-gateway-admin/src/environments/environment.staging.ts"
+            }
+          ],
+          "optimization": true,
+          "outputHashing": "all",
+          "sourceMap": false,
+          "namedChunks": false,
+          "extractLicenses": true,
+          "vendorChunk": true
+        },
+        "production": {
+          "fileReplacements": [
+            {
+              "replace": "packages/gpt-gateway-admin/src/environments/environment.ts",
+              "with": "packages/gpt-gateway-admin/src/environments/environment.production.ts"
+            }
+          ],
+          "optimization": true,
+          "outputHashing": "all",
+          "sourceMap": false,
+          "namedChunks": false,
+          "extractLicenses": true,
+          "vendorChunk": true
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nrwl/webpack:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "gpt-gateway-admin:build",
+        "hmr": true,
+        "open": true,
+        "port": 3001
+      },
+      "dependsOn": ["prebuild"],
+      "configurations": {
+        "development": {
+          "buildTarget": "gpt-gateway-admin:build:development"
+        },
+        "production": {
+          "buildTarget": "gpt-gateway-admin:build:production",
+          "hmr": false
+        }
+      }
+    },
+    "lint": {
+      "executor": "@nrwl/linter:eslint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["packages/gpt-gateway-admin/**/*.{ts,tsx,js,jsx}"]
+      }
+    },
+    "test": {
+      "executor": "@nrwl/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/packages/gpt-gateway-admin"],
+      "options": {
+        "jestConfig": "packages/gpt-gateway-admin/jest.config.ts",
+        "passWithNoTests": true
+      }
+    },
+    "package:container": {
+      "executor": "@nx-tools/nx-container:build",
+      "options": {
+        "push": false,
+        "tags": ["amplication/client:latest"],
+        "build-args": []
+      },
+      "configurations": {
+        "production": {
+          "build-args": []
+        }
+      }
+    },
+    "deploy:static": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "nx build gpt-gateway-admin",
+          "aws s3 sync ./dist/packages/gpt-gateway-admin s3://{args.bucket-name} --delete",
+          "aws cloudfront create-invalidation --distribution-id '{args.distribution-id}'  --paths '/*'"
+        ],
+        "forwardAllArgs": false,
+        "parallel": false
+      },
+      "configurations": {
+        "sandbox": {
+          "commands": [
+            "nx build gpt-gateway-admin --configuration=sandbox",
+            "aws s3 sync ./dist/packages/gpt-gateway-admin s3://{args.bucket-name} --delete",
+            "aws cloudfront create-invalidation --distribution-id '{args.distribution-id}'  --paths '/*'"
+          ]
+        },
+        "staging": {
+          "commands": [
+            "nx build gpt-gateway-admin --configuration=staging",
+            "aws s3 sync ./dist/packages/gpt-gateway-admin s3://{args.bucket-name} --delete",
+            "aws cloudfront create-invalidation --distribution-id '{args.distribution-id}'  --paths '/*'"
+          ]
+        },
+        "production": {
+          "commands": [
+            "nx build gpt-gateway-admin --configuration=production",
+            "aws s3 sync ./dist/packages/gpt-gateway-admin s3://{args.bucket-name} --delete",
+            "aws cloudfront create-invalidation --distribution-id '{args.distribution-id}'  --paths '/*'"
+          ]
+        }
+      }
+    }
+  },
+  "tags": []
+}
