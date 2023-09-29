@@ -50,6 +50,7 @@ import { GRAPHQL_BIGINT_VALUE, INPUT_JSON_VALUE_KEY } from "./constants";
 import DsgContext from "../../../dsg-context";
 import { logger } from "../../../logging";
 import { DECIMAL_JS_MODULE, DECIMAL_VALUE_ID } from "./decimal-js";
+import { Tracing } from "../../../tracing";
 
 const FILTERS_IMPORTABLE_NAMES = Object.fromEntries(
   Object.values(EnumScalarFiltersTypes).map((filter) => {
@@ -108,10 +109,15 @@ export function createDTOModule(
   dtoNameToPath: Record<string, string>
 ): Module {
   try {
-    const file = createDTOFile(dto, dtoNameToPath[dto.id.name], dtoNameToPath);
-    addAutoGenerationComment(file);
+    const file = Tracing.wrap(
+      createDTOFile,
+      dto,
+      dtoNameToPath[dto.id.name],
+      dtoNameToPath
+    );
+    Tracing.wrap(addAutoGenerationComment, file);
     return {
-      code: print(file).code,
+      code: Tracing.wrap(print, file).code,
       path: dtoNameToPath[dto.id.name],
     };
   } catch (error) {

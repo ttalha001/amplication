@@ -37,7 +37,6 @@ async function createServerInternal(
   eventParams: CreateServerParams
 ): Promise<ModuleMap> {
   const { serverDirectories, entities } = DsgContext.getInstance;
-
   const context = DsgContext.getInstance;
 
   await context.logger.info(`Server path: ${serverDirectories.baseDirectory}`);
@@ -58,6 +57,7 @@ async function createServerInternal(
   await context.logger.info("Creating DTOs...");
   const dtos = await Tracing.wrapAsync(createDTOs, context.entities);
   context.DTOs = dtos;
+  await context.logger.info("Creating DTO modules...");
   const dtoModules = await Tracing.wrapAsync(createDTOModules, dtos);
 
   await context.logger.info("Creating resources...");

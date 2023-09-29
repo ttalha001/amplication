@@ -48,24 +48,28 @@ export async function createDTOModules(dtos: DTOs): Promise<ModuleMap> {
 export async function createDTOModulesInternal({
   dtos,
 }: CreateDTOsParams): Promise<ModuleMap> {
-  const dtoNameToPath = getDTONameToPath(dtos);
+  const dtoNameToPath = Tracing.wrap(getDTONameToPath, dtos);
   const moduleMap = new ModuleMap(DsgContext.getInstance.logger);
 
   const entityDTOs = Object.values(dtos).flatMap((entityDTOs) =>
     Object.values(entityDTOs)
   );
 
-  for (const dto of entityDTOs) {
-    const isEnumDTO = namedTypes.TSEnumDeclaration.check(dto);
-    let module: Module;
-    if (isEnumDTO) {
-      module = createEnumDTOModule(dto, dtoNameToPath);
-    } else {
-      module = createDTOModule(dto, dtoNameToPath);
-    }
+  const modulesDtoPromises = entityDTOs.map(
+    (dto) =>
+      new Promise<Module>((resolve) => {
+        const isEnumDTO = namedTypes.TSEnumDeclaration.check(dto);
+        if (isEnumDTO) {
+          resolve(createEnumDTOModule(dto, dtoNameToPath));
+        } else {
+          resolve(Tracing.wrap(createDTOModule, dto, dtoNameToPath));
+        }
+      })
+  );
+  const modulesDto = await Promise.all(modulesDtoPromises);
 
-    await moduleMap.set(module);
-  }
+  modulesDto.forEach((module) => moduleMap.set(module));
+
   return moduleMap;
 }
 
@@ -96,46 +100,27 @@ export async function createDTOs(entities: Entity[]): Promise<DTOs> {
 }
 
 async function createEntityDTOs(entity: Entity): Promise<EntityDTOs> {
-  const entityDTO = Tracing.wrap(createEntityDTO, entity);
-  const createInput = Tracing.wrap(createCreateInput, entity);
-  const updateInput = Tracing.wrap(createUpdateInput, entity);
-  const whereInput = Tracing.wrap(createWhereInput, entity);
-  const whereUniqueInput = Tracing.wrap(createWhereUniqueInput, entity);
-  const createArgs = await Tracing.wrapAsync(
-    createCreateArgs,
-    entity,
-    createInput
-  );
-  const orderByInput = await Tracing.wrapAsync(createOrderByInput, entity);
-  const deleteArgs = await Tracing.wrapAsync(
-    createDeleteArgs,
-    entity,
-    whereUniqueInput
-  );
-  const countArgs = await Tracing.wrapAsync(
-    createCountArgs,
-    entity,
-    whereInput
-  );
-  const findManyArgs = await Tracing.wrapAsync(
-    createFindManyArgs,
+  const entityDTO = createEntityDTO(entity);
+  const createInput = createCreateInput(entity);
+  const updateInput = createUpdateInput(entity);
+  const whereInput = createWhereInput(entity);
+  const whereUniqueInput = createWhereUniqueInput(entity);
+  const createArgs = await createCreateArgs(entity, createInput);
+  const orderByInput = await createOrderByInput(entity);
+  const deleteArgs = await createDeleteArgs(entity, whereUniqueInput);
+  const countArgs = await createCountArgs(entity, whereInput);
+  const findManyArgs = await createFindManyArgs(
     entity,
     whereInput,
     orderByInput
   );
-  const findOneArgs = await Tracing.wrapAsync(
-    createFindOneArgs,
-    entity,
-    whereUniqueInput
-  );
-  const updateArgs = await Tracing.wrapAsync(
-    createUpdateArgs,
+  const findOneArgs = await createFindOneArgs(entity, whereUniqueInput);
+  const updateArgs = await createUpdateArgs(
     entity,
     whereUniqueInput,
     updateInput
   );
-  const listRelationFilter = await Tracing.wrapAsync(
-    createEntityListRelationFilter,
+  const listRelationFilter = await createEntityListRelationFilter(
     entity,
     whereInput
   );

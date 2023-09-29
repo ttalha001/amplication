@@ -1,11 +1,11 @@
+import { Tracing } from "./tracing";
 import { generateCode } from "./generate-code";
 import { logger } from "./logging";
-import { Tracing } from "./tracing";
 
 if (require.main === module) {
   Tracing.init();
 
-  Tracing.wrapAsync(generateCode).catch(async (err) => {
+  void Tracing.wrapAsync(generateCode).catch(async (err) => {
     logger.error(err);
     process.exit(1);
   });

@@ -7,6 +7,7 @@ import {
 } from "@amplication/code-gen-types";
 import util from "node:util";
 import DsgContext from "./dsg-context";
+import { Tracing } from "./tracing";
 
 export type PluginWrapper = (
   func: (...args: any) => ModuleMap | Promise<ModuleMap>,
@@ -46,8 +47,8 @@ const defaultBehavior = async (
     return new ModuleMap(DsgContext.getInstance.logger);
 
   return util.types.isAsyncFunction(func)
-    ? await func(beforeFuncResults)
-    : func(beforeFuncResults);
+    ? await Tracing.wrapAsync(func, beforeFuncResults)
+    : Tracing.wrap(func, beforeFuncResults);
 };
 
 /**

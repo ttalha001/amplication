@@ -7,6 +7,7 @@ import { BuildManagerNotifier } from "./notify-build-manager";
 import { logger as internalLogger } from "./logging";
 import { prepareDefaultPlugins } from "./utils/dynamic-installation/defaultPlugins";
 import { getFileEncoding } from "./utils/get-file-encoding";
+import { Tracing } from "./tracing";
 
 export const AMPLICATION_MODULES = "amplication_modules";
 
@@ -57,13 +58,14 @@ export const generateCodeByResourceData = async (
 
     await dynamicPackagesInstallations(allPlugins, internalLogger);
 
-    const modules = await createDataService(
+    const modules = await Tracing.wrapAsync(
+      createDataService,
       { ...resourceData, pluginInstallations: allPlugins },
       internalLogger,
       join(__dirname, "..", AMPLICATION_MODULES)
     );
 
-    await writeModules(modules, destination);
+    await Tracing.wrapAsync(writeModules, modules, destination);
   } catch (error) {
     internalLogger.error(error.message, error);
     throw error;
