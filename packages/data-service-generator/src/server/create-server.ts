@@ -17,11 +17,14 @@ import DsgContext from "../dsg-context";
 import { ENV_VARIABLES } from "./constants";
 import { createServerPackageJson } from "./package-json/create-package-json";
 import { createMessageBroker } from "./message-broker/create-service-message-broker-modules";
-import { createDockerComposeDBFile } from "./docker-compose/create-docker-compose-db";
 import { createDockerComposeFile } from "./docker-compose/create-docker-compose";
 import pluginWrapper from "../plugin-wrapper";
 import { createAuthModules } from "./auth/create-auth";
 import { createGitIgnore } from "./gitignore/create-gitignore";
+import { createDockerComposeDevFile } from "./docker-compose/create-docker-compose-dev";
+import { createTypesRelatedFiles } from "./create-types-related-files/create-types-related-files";
+import { createMainFile } from "./create-main/create-main-file";
+import { connectMicroservices } from "./connect-microservices/connect-microservices";
 import { Tracing } from "../tracing";
 
 const STATIC_DIRECTORY = path.resolve(__dirname, "static");
@@ -98,6 +101,8 @@ async function createServerInternal(
   await context.logger.info("Formatting package.json code...");
   await packageJsonModule.replaceModulesCode((code) => formatJson(code));
 
+  const typesRelatedFiles = await createTypesRelatedFiles();
+  const mainFile = await createMainFile();
   await context.logger.info("Creating Prisma schema...");
   const prismaSchemaModule = await createPrismaSchemaModule(entities);
 
@@ -106,9 +111,12 @@ async function createServerInternal(
     envVariables: ENV_VARIABLES,
   });
 
+  await context.logger.info("Creating connectMicroservices function...");
+  const connectMicroservicesModule = await connectMicroservices();
+
   await context.logger.info("Creating Docker compose configurations...");
   const dockerComposeFile = await createDockerComposeFile();
-  const dockerComposeDBFile = await createDockerComposeDBFile();
+  const dockerComposeDevFile = await createDockerComposeDevFile();
 
   await context.logger.info("Finalizing server creation...");
   const moduleMap = new ModuleMap(context.logger);
@@ -126,7 +134,10 @@ async function createServerInternal(
     prismaSchemaModule,
     dotEnvModule,
     dockerComposeFile,
-    dockerComposeDBFile,
+    dockerComposeDevFile,
+    typesRelatedFiles,
+    mainFile,
+    connectMicroservicesModule,
   ]);
   return moduleMap;
 }

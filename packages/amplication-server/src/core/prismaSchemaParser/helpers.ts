@@ -1,4 +1,4 @@
-import { Enum, Field, Func, Schema } from "@mrleebo/prisma-ast";
+import { Enum, Field, Func, Model, Schema } from "@mrleebo/prisma-ast";
 import pluralize from "pluralize";
 import { sentenceCase } from "sentence-case";
 import { isReservedName } from "../entity/reservedNames";
@@ -6,12 +6,15 @@ import {
   DEFAULT_ATTRIBUTE_NAME,
   ENUM_TYPE_NAME,
   ID_ATTRIBUTE_NAME,
+  MODEL_TYPE_NAME,
   NOW_FUNCTION_NAME,
   UPDATED_AT_ATTRIBUTE_NAME,
+  idTypePropertyMapByPrismaFieldType,
 } from "./constants";
 import { EnumDataType } from "../../prisma";
 import { ScalarType } from "prisma-schema-dsl-types";
-import { camelCase } from "lodash";
+import { camelCase, upperFirst } from "lodash";
+import { Mapper } from "./types";
 
 export function capitalizeFirstLetter(string): string {
   return string.charAt(0).toUpperCase() + string.slice(1);
@@ -27,15 +30,11 @@ export function capitalizeFirstLetterOfEachWord(str: string): string {
 export function filterOutAmplicationAttributes(attributes): string[] {
   return attributes.filter(
     (attribute) =>
-      !attribute.startsWith("@id") &&
       !attribute.startsWith("@default(now())") &&
-      !attribute.startsWith("@default(cuid())") &&
-      !attribute.startsWith("@default(uuid())") &&
-      !attribute.startsWith("@default(autoincrement())") &&
-      !attribute.startsWith("@relation") &&
       !attribute.startsWith("@updatedAt") &&
       !attribute.startsWith("@unique") &&
-      !attribute.startsWith("@relation")
+      !attribute.startsWith("@relation") &&
+      !attribute.startsWith("@db.ObjectId")
   );
 }
 
@@ -47,9 +46,9 @@ export function filterOutAmplicationAttributes(attributes): string[] {
 export function formatModelName(modelName: string): string {
   // plural models are mapped to singular
   if (pluralize.isPlural(modelName)) {
-    modelName = capitalizeFirstLetter(pluralize.singular(modelName));
+    modelName = pluralize.singular(modelName);
   }
-  // snake case models are mapped to pascal case
+  // snake case models are mapped to pascal case with the capitalizeFirstLetter helper function in order to know the separation between words
   if (modelName.includes("_")) {
     modelName = modelName.split("_").map(capitalizeFirstLetter).join("");
   }
@@ -59,7 +58,7 @@ export function formatModelName(modelName: string): string {
   }
 
   // always make sure the model name is in pascal case
-  modelName = capitalizeFirstLetter(modelName);
+  modelName = upperFirst(camelCase(modelName));
   return modelName;
 }
 
@@ -102,11 +101,22 @@ export function idField(field: Field) {
   }
 }
 
-export function lookupField(field: Field) {
-  const fieldLookupType = field.attributes?.some(
-    (attribute) => attribute.name === "relation"
+export function isValidIdFieldType(fieldType: string) {
+  return idTypePropertyMapByPrismaFieldType.hasOwnProperty(fieldType);
+}
+
+export function lookupField(schema: Schema, field: Field) {
+  const models = schema.list.filter(
+    (item) => item.type === MODEL_TYPE_NAME
+  ) as Model[];
+
+  const isFieldTypeIsModel = models.some(
+    (modelItem: Model) =>
+      formatModelName(modelItem.name) ===
+      formatModelName(field.fieldType as string)
   );
-  if (fieldLookupType) {
+
+  if (isFieldTypeIsModel) {
     return EnumDataType.Lookup;
   }
 }
@@ -203,4 +213,29 @@ export function jsonField(field: Field) {
   if (field.fieldType === ScalarType.Json) {
     return EnumDataType.Json;
   }
+}
+
+export function findOriginalModelName(
+  mapper: Mapper,
+  modelName: string
+): string {
+  return (
+    Object.values(mapper.modelNames).find((item) => item.newName === modelName)
+      ?.originalName || modelName
+  );
+}
+
+export function findOriginalFieldName(
+  mapper: Mapper,
+  fieldName: string
+): string {
+  for (const [, fields] of Object.entries(mapper.fieldNames)) {
+    const field = Object.values(fields).find(
+      (value) => value.newName === fieldName
+    );
+    if (field) {
+      return field.originalName;
+    }
+  }
+  return fieldName;
 }

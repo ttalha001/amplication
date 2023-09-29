@@ -60,7 +60,7 @@ describe("schema-utils", () => {
         dataType: dataType,
         required: true,
         unique: false,
-        searchable: false,
+        searchable: true,
         description: "",
         properties: {},
         customAttributes: '@map("mock_field")',
@@ -93,32 +93,17 @@ describe("schema-utils", () => {
       expect(result.required).toEqual(false);
     });
 
-    it("should mark Lookup field as searchable", () => {
+    it("should mark all field as searchable", () => {
       const field = {
         name: "testField",
         optional: false,
         attributes: [],
       } as unknown as Field;
-      const dataType = EnumDataType.Lookup;
+      const dataType = EnumDataType.Id;
 
       const result = createOneEntityFieldCommonProperties(field, dataType);
 
       expect(result.searchable).toEqual(true);
-    });
-
-    it("should throw error if Lookup field has custom attributes", () => {
-      const field = {
-        name: "testField",
-        optional: false,
-        attributes: mockAttributes,
-      } as unknown as Field;
-      const dataType = EnumDataType.Lookup;
-
-      expect(() =>
-        createOneEntityFieldCommonProperties(field, dataType)
-      ).toThrowError(
-        "Custom attributes are not allowed on relation fields. Only @relation attribute is allowed"
-      );
     });
 
     it("should add custom attributes for non-Lookup field", () => {
@@ -190,14 +175,26 @@ describe("schema-utils", () => {
     it("should return an array of field attributes as strings", () => {
       const mockAttributes = [
         { name: "mockFieldAttribute1", args: [] },
-        { name: "mockFieldAttribute2", args: [] },
+        {
+          name: "mockFieldAttribute2",
+          args: [
+            {
+              type: "attributeArgument",
+              value: {
+                type: "function",
+                name: "dbgenerated",
+                params: ['"uuid_generate_v4()"'],
+              },
+            },
+          ],
+        },
       ] as unknown as Attribute[];
 
       const result = prepareFieldAttributes(mockAttributes);
 
       expect(result).toEqual([
-        "@mockFieldAttribute1()",
-        "@mockFieldAttribute2()",
+        "@mockFieldAttribute1",
+        '@mockFieldAttribute2(dbgenerated("uuid_generate_v4()"))',
       ]);
     });
 
@@ -298,31 +295,57 @@ describe("schema-utils", () => {
 
       expect(result).toEqual([
         '@relation(fields: [user_id], references: [id], onDelete: Cascade, map: "mockRelationValue")',
-        "@mockFieldAttribute2()",
+        "@mockFieldAttribute2",
+      ]);
+    });
+
+    it("should correctly format args that are arrays of functions", () => {
+      const mockAttributes = [
+        {
+          type: "attribute",
+          name: "mockModelAttribute",
+          kind: "object",
+          args: [
+            {
+              type: "attributeArgument",
+              value: {
+                type: "array",
+                args: [
+                  {
+                    type: "function",
+                    name: "value_1",
+                    params: [
+                      {
+                        type: "keyValue",
+                        key: "ops",
+                        value: "Int4BloomOps",
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              type: "attributeArgument",
+              value: {
+                type: "keyValue",
+                key: "type",
+                value: "Brin",
+              },
+            },
+          ],
+        },
+      ] as unknown as BlockAttribute[];
+
+      const result = prepareModelAttributes(mockAttributes);
+
+      expect(result).toEqual([
+        "@@mockModelAttribute([value_1(ops: Int4BloomOps)], type: Brin)",
       ]);
     });
   });
 
   describe("findFkFieldNameOnAnnotatedField", () => {
-    it("should throw error if no relation attribute is found", () => {
-      const field = {
-        type: "field",
-        name: "testField",
-        attributes: [
-          {
-            type: "attribute-type",
-            kind: "kind",
-            name: "attribute",
-            args: [],
-          },
-        ],
-      } as unknown as Field;
-
-      expect(() => {
-        findFkFieldNameOnAnnotatedField(field);
-      }).toThrow(`Missing relation attribute on field ${field.name}`);
-    });
-
     it("should throw error if no fields attribute is found on relation attribute", () => {
       const field = {
         name: "testField",

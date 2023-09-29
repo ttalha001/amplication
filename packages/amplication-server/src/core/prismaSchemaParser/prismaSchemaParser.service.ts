@@ -12,7 +12,6 @@ import {
   RelationArray,
   Func,
   ConcretePrismaSchemaBuilder,
-  Attribute,
   BlockAttribute,
 } from "@mrleebo/prisma-ast";
 import {
@@ -31,6 +30,9 @@ import {
   singleLineTextField,
   updateAtField,
   wholeNumberField,
+  findOriginalFieldName,
+  findOriginalModelName,
+  isValidIdFieldType,
 } from "./helpers";
 import {
   handleModelNamesCollision,
@@ -39,6 +41,14 @@ import {
   createOneEntityFieldCommonProperties,
   findRemoteRelatedModelAndField,
   handleEnumMapAttribute,
+  convertUniqueFieldNotNamedIdToIdField,
+  convertUniqueFieldNamedIdToIdField,
+  addIdFieldIfNotExists,
+  handleIdFieldNotNamedId,
+  handleNotIdFieldNotUniqueNamedId,
+  addMapAttributeToField,
+  addMapAttributeToModel,
+  findRelationAttributeName,
 } from "./schema-utils";
 import { AmplicationLogger } from "@amplication/util/nestjs/logging";
 import pluralize from "pluralize";
@@ -51,18 +61,37 @@ import {
 } from "./types";
 import {
   ARG_KEY_FIELD_NAME,
+  ARRAY_ARG_TYPE_NAME,
   ATTRIBUTE_TYPE_NAME,
+  DEFAULT_ATTRIBUTE_NAME,
   ENUM_TYPE_NAME,
   FIELD_TYPE_NAME,
+  FUNCTION_ARG_TYPE_NAME,
   ID_ATTRIBUTE_NAME,
+  ID_DEFAULT_VALUE_AUTO_INCREMENT,
+  ID_DEFAULT_VALUE_CUID,
+  ID_DEFAULT_VALUE_UUID,
   ID_FIELD_NAME,
-  MAP_ATTRIBUTE_NAME,
+  ID_TYPE_AUTO_INCREMENT,
+  ID_TYPE_AUTO_INCREMENT_BIG_INT,
+  ID_TYPE_CUID,
+  ID_TYPE_UUID,
+  INDEX_ATTRIBUTE_NAME,
   MODEL_TYPE_NAME,
   OBJECT_KIND_NAME,
+  PRISMA_TYPE_BIG_INT,
+  PRISMA_TYPE_INT,
+  PRISMA_TYPE_STRING,
   RELATION_ATTRIBUTE_NAME,
   UNIQUE_ATTRIBUTE_NAME,
-  idTypePropertyMap,
-  idTypePropertyMapByFieldType,
+  WholeNumberType,
+  DecimalNumberType,
+  idTypePropertyMapByPrismaFieldType,
+  MAP_ATTRIBUTE_NAME,
+  ID_DEFAULT_VALUE_CUID_FUNCTION,
+  ID_DEFAULT_VALUE_UUID_FUNCTION,
+  ID_DEFAULT_VALUE_AUTO_INCREMENT_FUNCTION,
+  prismaIdTypeToDefaultIdType,
 } from "./constants";
 import { isValidSchema } from "./validators";
 import { EnumDataType } from "../../enums/EnumDataType";
@@ -77,7 +106,9 @@ export class PrismaSchemaParserService {
     this.prepareFieldNames,
     this.prepareFieldTypes,
     this.prepareModelIdAttribute,
+    this.prepareModelCompositeTypeAttributes,
     this.prepareIdField,
+    this.prepareRelationReferenceFields,
   ];
 
   constructor(
@@ -223,11 +254,17 @@ export class PrismaSchemaParserService {
       ) as Field[];
 
       for (const field of modelFields) {
+        const isManyToMany = this.isManyToManyRelation(schema, model, field);
+
         if (this.isFkFieldOfARelation(schema, model, field)) {
           continue;
         }
 
-        if (this.isNotAnnotatedRelationField(schema, field)) {
+        /** we want to skip fields that are not annotated - meaning they don't have a relation attribute 
+         OR that they only have a name relation attribute: @relation(name: "someName") / @relation("someName")
+         we also skip many to many relation because these fields are handled in the convertPrismaManyToManyToEntityField function
+         look at isLookupField function for more details) */
+        if (this.isNotAnnotatedRelationField(schema, field) && !isManyToMany) {
           continue;
         }
 
@@ -320,13 +357,36 @@ export class PrismaSchemaParserService {
             actionContext
           );
         } else if (this.isLookupField(schema, field)) {
-          this.convertPrismaLookupToEntityField(
-            schema,
-            model,
-            field,
-            preparedEntities,
-            actionContext
-          );
+          if (isManyToMany) {
+            const isOneOfTheSidesExists = preparedEntities.some((entity) => {
+              return entity.fields.find((entityField) => {
+                return (
+                  entityField.dataType === EnumDataType.Lookup &&
+                  entityField.relatedFieldName === field.name
+                );
+              });
+            });
+
+            // only if we haven't already created any sides of the relation
+            // this check is needed because in the entity service we create the related entity of the entity that we are currently creating
+            if (!isOneOfTheSidesExists) {
+              this.convertPrismaLookupToEntityField(
+                schema,
+                model,
+                field,
+                preparedEntities,
+                actionContext
+              );
+            }
+          } else {
+            this.convertPrismaLookupToEntityField(
+              schema,
+              model,
+              field,
+              preparedEntities,
+              actionContext
+            );
+          }
         }
       }
     }
@@ -357,15 +417,6 @@ export class PrismaSchemaParserService {
       (item) => item.type === MODEL_TYPE_NAME
     ) as Model[];
     modelList.map((model: Model) => {
-      const modelAttributes = model.properties.filter(
-        (prop) =>
-          prop.type === ATTRIBUTE_TYPE_NAME && prop.kind === OBJECT_KIND_NAME
-      ) as BlockAttribute[];
-
-      const hasMapAttribute = modelAttributes?.some(
-        (attribute) => attribute.name === MAP_ATTRIBUTE_NAME
-      );
-
       const formattedModelName = formatModelName(model.name);
 
       if (formattedModelName !== model.name) {
@@ -377,19 +428,16 @@ export class PrismaSchemaParserService {
         );
 
         mapper.modelNames[model.name] = {
-          oldName: model.name,
+          originalName: model.name,
           newName: newModelName,
         };
+
+        addMapAttributeToModel(builder, model, actionContext);
 
         void actionContext.onEmitUserActionLog(
           `Model name "${model.name}" was changed to "${newModelName}"`,
           EnumActionLogLevel.Info
         );
-
-        !hasMapAttribute &&
-          builder
-            .model(model.name)
-            .blockAttribute(MAP_ATTRIBUTE_NAME, model.name);
 
         builder.model(model.name).then<Model>((model) => {
           model.name = newModelName;
@@ -421,6 +469,8 @@ export class PrismaSchemaParserService {
     const schema = builder.getSchema();
     const models = schema.list.filter((item) => item.type === MODEL_TYPE_NAME);
     models.map((model: Model) => {
+      const originalModelName = findOriginalModelName(mapper, model.name);
+
       const modelFieldList = model.properties.filter(
         (property) =>
           property.type === FIELD_TYPE_NAME &&
@@ -432,18 +482,6 @@ export class PrismaSchemaParserService {
         // we are not renaming enum fields because we are not supporting custom attributes on enum fields
         if (this.isOptionSetField(schema, field)) return builder;
         if (this.isMultiSelectOptionSetField(schema, field)) return builder;
-        // we are not renaming lookup fields because
-        //  1. relation field is not really a field in the DB
-        //  2. other attributes than @relation are not supported on relation fields
-        if (this.isLookupField(schema, field)) return builder;
-
-        const fieldAttributes = field.attributes?.filter(
-          (attr) => attr.type === ATTRIBUTE_TYPE_NAME
-        ) as Attribute[];
-
-        const hasMapAttribute = fieldAttributes?.find(
-          (attribute: Attribute) => attribute.name === MAP_ATTRIBUTE_NAME
-        );
 
         const formattedFieldName = formatFieldName(field.name);
 
@@ -457,9 +495,14 @@ export class PrismaSchemaParserService {
             ? `${formattedFieldName}Field`
             : formattedFieldName;
 
-          mapper.fieldNames[field.name] = {
-            oldName: field.name,
-            newName: newFieldName,
+          mapper.fieldNames = {
+            ...mapper.fieldNames,
+            [originalModelName]: {
+              [field.name]: {
+                originalName: field.name,
+                newName: newFieldName,
+              },
+            },
           };
 
           void actionContext.onEmitUserActionLog(
@@ -467,11 +510,7 @@ export class PrismaSchemaParserService {
             EnumActionLogLevel.Info
           );
 
-          !hasMapAttribute &&
-            builder
-              .model(model.name)
-              .field(field.name)
-              .attribute(MAP_ATTRIBUTE_NAME, [`"${field.name}"`]);
+          addMapAttributeToField(builder, schema, model, field, actionContext);
 
           builder
             .model(model.name)
@@ -505,22 +544,30 @@ export class PrismaSchemaParserService {
     const schema = builder.getSchema();
     const models = schema.list.filter((item) => item.type === MODEL_TYPE_NAME);
 
-    Object.entries(mapper.modelNames).map(([oldName, { newName }]) => {
+    Object.entries(mapper.modelNames).map(([originalName, { newName }]) => {
       models.map((model: Model) => {
+        const originalModelName = findOriginalModelName(mapper, model.name);
+        const originalFieldName = findOriginalFieldName(mapper, model.name);
         const fields = model.properties.filter(
           (property) => property.type === FIELD_TYPE_NAME
         ) as Field[];
         fields.map((field: Field) => {
-          if (field.fieldType === oldName) {
-            mapper.fieldTypes[field.fieldType] = {
-              oldName: field.fieldType,
-              newName,
+          if (field.fieldType === originalName) {
+            mapper.fieldTypes = {
+              ...mapper.fieldTypes,
+              [originalModelName]: {
+                ...(mapper.fieldTypes[originalModelName] ?? {}),
+                [originalFieldName]: {
+                  ...(mapper.fieldTypes[originalModelName]?.[
+                    originalFieldName
+                  ] ?? {}),
+                  [field.fieldType]: {
+                    originalName: field.fieldType,
+                    newName,
+                  },
+                },
+              },
             };
-
-            void actionContext.onEmitUserActionLog(
-              `field type "${field.fieldType}" on model "${model.name}" was changed to "${newName}"`,
-              EnumActionLogLevel.Info
-            );
 
             builder
               .model(model.name)
@@ -545,7 +592,7 @@ export class PrismaSchemaParserService {
    * This function handle cases where the model doesn't have an id field (field with "@id" attribute),
    * but it has a composite id - unique identifier for a record in a database that is formed by combining multiple field values.
    * Model with composite id are decorated with `@@id` attribute on the model.
-   * In this cases, we rename the `@@id` attribute to `@@unique` and add id filed of type String with `@id` attribute to the model
+   * In this cases, we rename the `@@id` attribute to `@@unique`
    */
   private prepareModelIdAttribute({
     builder,
@@ -578,16 +625,111 @@ export class PrismaSchemaParserService {
         EnumActionLogLevel.Warning
       );
 
-      // add an id field with id attribute to the model
-      builder
-        .model(model.name)
-        .field(ID_FIELD_NAME, "String")
-        .attribute(ID_ATTRIBUTE_NAME);
+      // adding the id field to the model is done in the prepareIdField operation
+    });
 
-      void actionContext.onEmitUserActionLog(
-        `id field was added to model "${model.name}"`,
-        EnumActionLogLevel.Warning
-      );
+    return {
+      builder,
+      existingEntities,
+      mapper,
+      actionContext,
+    };
+  }
+
+  private prepareModelCompositeTypeAttributes({
+    builder,
+    existingEntities,
+    mapper,
+    actionContext,
+  }: PrepareOperationIO): PrepareOperationIO {
+    const schema = builder.getSchema();
+    const models = schema.list.filter(
+      (item) => item.type === MODEL_TYPE_NAME
+    ) as Model[];
+
+    models.forEach((model: Model) => {
+      builder.model(model.name).then<Model>((modelItem) => {
+        const modelFields = modelItem.properties.filter(
+          (prop) => prop.type === FIELD_TYPE_NAME
+        ) as Field[];
+        const modelAttributes = modelItem.properties.filter(
+          (prop) =>
+            prop.type === ATTRIBUTE_TYPE_NAME && prop.kind === OBJECT_KIND_NAME
+        ) as BlockAttribute[];
+
+        const modelReferenceAttributes = modelAttributes.filter(
+          (attribute) =>
+            attribute.name === ID_ATTRIBUTE_NAME ||
+            attribute.name === UNIQUE_ATTRIBUTE_NAME ||
+            attribute.name === INDEX_ATTRIBUTE_NAME
+        );
+
+        for (const prop of modelItem.properties) {
+          if (
+            prop.type === ATTRIBUTE_TYPE_NAME &&
+            prop.kind === OBJECT_KIND_NAME
+          ) {
+            for (const attribute of modelReferenceAttributes) {
+              const compositeArgs = attribute.args?.find(
+                (arg) =>
+                  arg.type === "attributeArgument" &&
+                  (arg.value as RelationArray).type === ARRAY_ARG_TYPE_NAME
+              );
+
+              const functionArgs = attribute.args?.find(
+                (arg) =>
+                  compositeArgs &&
+                  (
+                    (arg.value as RelationArray).args as unknown as Array<Func>
+                  )?.some((item) => item.type === FUNCTION_ARG_TYPE_NAME)
+              );
+
+              // range index: @@index([value_1(ops: Int4BloomOps)], type: Brin)
+              const rangeIndexAttribute =
+                attribute.name === INDEX_ATTRIBUTE_NAME && functionArgs;
+
+              if (rangeIndexAttribute) {
+                const rangeIndexArgArr = (
+                  rangeIndexAttribute.value as RelationArray
+                ).args as unknown as Array<Func>;
+
+                const originalModelName = findOriginalModelName(
+                  mapper,
+                  model.name
+                );
+                for (const arg of rangeIndexArgArr) {
+                  if (typeof arg.name === "string") {
+                    const newFieldName =
+                      mapper.fieldNames[originalModelName][arg.name]?.newName;
+
+                    if (newFieldName) {
+                      arg.name = newFieldName;
+                    }
+                  }
+                }
+              }
+
+              if (compositeArgs && !rangeIndexAttribute) {
+                const attrArgArr = (compositeArgs.value as RelationArray)?.args;
+
+                // avoid formatting an arg when the field in the model was not formatted, for example: the fk field of a relation
+                // or a field that represents an enum value
+                for (const [index, arg] of attrArgArr.entries()) {
+                  modelFields.forEach((field) => {
+                    // check that we are at the right field
+                    if (formatFieldName(field.name) === formatFieldName(arg)) {
+                      // if the field was formatted, we format the arg, otherwise we leave it as it is
+                      if (field.name !== arg) {
+                        attrArgArr[index] = field.name;
+                      }
+                    }
+                  });
+                }
+              }
+            }
+          }
+        }
+      });
     });
 
     return {
@@ -603,6 +745,7 @@ export class PrismaSchemaParserService {
    * If a non-ID field is named id, it's renamed to ${modelName}Id to prevent any collisions with the actual ID field.
    * If an ID field (a field with an `@id` attribute) has a different name, it's renamed to id
    * In both cases, a `@map` attribute is added to the field with the original field name
+   * And in the end we remove the `@default` attribute from any id field if it exists because we are adding it later as it's a part of the idType properties
    * @param builder - prisma schema builder
    * @returns the new builder if there was a change or the old one if there was no change
    */
@@ -616,60 +759,191 @@ export class PrismaSchemaParserService {
     const models = schema.list.filter((item) => item.type === MODEL_TYPE_NAME);
 
     models.forEach((model: Model) => {
+      let uniqueFieldAsIdField: Field;
+
       const modelFields = model.properties.filter(
         (property) => property.type === FIELD_TYPE_NAME
       ) as Field[];
+
+      const hasIdField = modelFields.some(
+        (field) =>
+          field.attributes?.some((attr) => attr.name === ID_ATTRIBUTE_NAME) ??
+          false
+      );
+
+      // find the first unique field that can become an id field and its name is id
+      const uniqueFieldNamedId = modelFields.find(
+        (field) =>
+          isValidIdFieldType(field.fieldType as string) &&
+          field.name === ID_FIELD_NAME &&
+          field.attributes?.some((attr) => attr.name === UNIQUE_ATTRIBUTE_NAME)
+      );
+
+      if (!uniqueFieldNamedId) {
+        // find the first unique field that can become an id field and is not named id
+        uniqueFieldAsIdField = modelFields.find(
+          (field) =>
+            isValidIdFieldType(field.fieldType as string) &&
+            field.name !== ID_FIELD_NAME &&
+            field.attributes?.some(
+              (attr) => attr.name === UNIQUE_ATTRIBUTE_NAME
+            )
+        );
+      }
+
+      // if the model doesn't have any id or unique field that can be used as id filed, we add an id field
+      // The type is the default type for id field in Amplication - String
+      if (!hasIdField && !uniqueFieldNamedId && !uniqueFieldAsIdField) {
+        addIdFieldIfNotExists(builder, model, actionContext);
+      }
+
+      if (!hasIdField && uniqueFieldNamedId) {
+        convertUniqueFieldNamedIdToIdField(
+          builder,
+          model,
+          uniqueFieldNamedId,
+          actionContext
+        );
+      }
+
+      if (!hasIdField && uniqueFieldAsIdField) {
+        convertUniqueFieldNotNamedIdToIdField(
+          builder,
+          schema,
+          model,
+          uniqueFieldAsIdField,
+          mapper,
+          actionContext
+        );
+      }
 
       modelFields.forEach((field: Field) => {
         const isIdField = field.attributes?.some(
           (attr) => attr.name === ID_ATTRIBUTE_NAME
         );
 
+        if (isIdField && this.isFkFieldOfARelation(schema, model, field)) {
+          throw new Error(
+            `Using the foreign key field as the primary key is not supported. The field "${field.name}" is a primary key on model "${model.name}" but also a foreign key on the related model. Please fix this issue and import the schema again.`
+          );
+        }
+
         if (!isIdField && field.name === ID_FIELD_NAME) {
-          void actionContext.onEmitUserActionLog(
-            `field name "${field.name}" on model name ${model.name} was changed to "${model.name}Id"`,
-            EnumActionLogLevel.Info
+          // if the field is named "id" but it is not decorated with id, nor with @unique - we rename it to ${modelName}Id
+          handleNotIdFieldNotUniqueNamedId(
+            builder,
+            schema,
+            model,
+            field,
+            mapper,
+            actionContext
           );
-
-          builder
-            .model(model.name)
-            .field(field.name)
-            .attribute("map", [`"${model.name}Id"`]);
-          builder
-            .model(model.name)
-            .field(field.name)
-            .then<Field>((field) => {
-              field.name = `${model.name}Id`;
-            });
-
-          mapper.idFields[field.name] = {
-            oldName: field.name,
-            newName: `${model.name}Id`,
-          };
         } else if (isIdField && field.name !== ID_FIELD_NAME) {
-          void actionContext.onEmitUserActionLog(
-            `field name "${field.name}" on model name ${model.name} was changed to "id"`,
-            EnumActionLogLevel.Info
+          handleIdFieldNotNamedId(
+            builder,
+            schema,
+            model,
+            field,
+            mapper,
+            actionContext
           );
-
-          builder
-            .model(model.name)
-            .field(field.name)
-            .attribute("map", [`"${field.name}"`]);
-          builder
-            .model(model.name)
-            .field(field.name)
-            .then<Field>((field) => {
-              field.name = ID_FIELD_NAME;
-            });
-
-          mapper.idFields[field.name] = {
-            oldName: field.name,
-            newName: `id`,
-          };
         }
       });
     });
+    return {
+      builder,
+      existingEntities,
+      mapper,
+      actionContext,
+    };
+  }
+
+  private prepareRelationReferenceFields({
+    builder,
+    existingEntities,
+    mapper,
+    actionContext,
+  }: PrepareOperationIO): PrepareOperationIO {
+    const schema = builder.getSchema();
+    const models = schema.list.filter(
+      (item) => item.type === MODEL_TYPE_NAME
+    ) as Model[];
+
+    models.forEach((model: Model) => {
+      const modelFields = model.properties.filter(
+        (property) => property.type === FIELD_TYPE_NAME
+      ) as Field[];
+
+      for (const field of modelFields) {
+        const annotatedRelationField = this.findAnnotatedRelationField(
+          schema,
+          field
+        );
+
+        if (!annotatedRelationField) continue;
+
+        const remoteModel = models.find(
+          (model: Model) =>
+            formatModelName(model.name) ===
+            formatModelName(field.fieldType as string)
+        );
+
+        if (!remoteModel) {
+          throw new Error(
+            `Remote model ${field.fieldType} not found for field ${field.name} on model ${model.name}`
+          );
+        }
+
+        const relatedModelIdField = remoteModel.properties.find(
+          (property) =>
+            property.type === FIELD_TYPE_NAME &&
+            property.attributes?.some(
+              (attr) => attr.name === ID_ATTRIBUTE_NAME
+            ) &&
+            property.name === ID_FIELD_NAME
+        ) as Field;
+
+        if (!relatedModelIdField) {
+          throw new Error(
+            `Related model "${remoteModel.name}" doesn't have an id field`
+          );
+        }
+
+        // find a map attribute on the relatedModelIdField and its value
+        const relatedModelIdFieldMapAttributeName =
+          relatedModelIdField.attributes?.find(
+            (attr) => attr.name === MAP_ATTRIBUTE_NAME
+          )?.name || "";
+
+        const annotatedRelationFieldReferenceArray =
+          annotatedRelationField.attributes
+            ?.find((attr) => attr.name === RELATION_ATTRIBUTE_NAME)
+            ?.args?.find((arg) => (arg.value as KeyValue).key === "references")
+            ?.value as RelationArray;
+
+        if (annotatedRelationFieldReferenceArray.args?.length > 1) {
+          throw new Error(
+            `The relation field "${annotatedRelationField.name}" on model "${model.name}" has more than one reference field. This is not supported.`
+          );
+        }
+
+        if (
+          annotatedRelationFieldReferenceArray &&
+          annotatedRelationFieldReferenceArray.args
+        ) {
+          for (const [
+            index,
+            arg,
+          ] of annotatedRelationFieldReferenceArray.args.entries()) {
+            if (arg[index] === relatedModelIdFieldMapAttributeName) {
+              annotatedRelationFieldReferenceArray[index] =
+                relatedModelIdField.name;
+            }
+          }
+        }
+      }
+    });
+
     return {
       builder,
       existingEntities,
@@ -719,7 +993,7 @@ export class PrismaSchemaParserService {
   }
 
   private isLookupField(schema: Schema, field: Field): boolean {
-    return lookupField(field) === EnumDataType.Lookup;
+    return lookupField(schema, field) === EnumDataType.Lookup;
   }
 
   private isOptionSetField(schema: Schema, field: Field): boolean {
@@ -733,19 +1007,42 @@ export class PrismaSchemaParserService {
     );
   }
 
-  private isNotAnnotatedRelationField(schema: Schema, field: Field): boolean {
-    const modelList = schema.list.filter(
-      (item) => item.type === MODEL_TYPE_NAME
-    );
-    const relationAttribute =
-      field.attributes?.some((attr) => attr.name === RELATION_ATTRIBUTE_NAME) ??
-      false;
-
+  private findAnnotatedRelationField(
+    schema: Schema,
+    field: Field
+  ): Field | null {
     const hasRelationAttributeWithRelationNameAndWithoutReferenceField =
       field.attributes?.some(
         (attr) =>
           attr.name === RELATION_ATTRIBUTE_NAME &&
-          attr.args?.some((arg) => typeof arg.value === "string") &&
+          !attr.args?.some((arg) => typeof arg.value === "string") &&
+          attr.args?.find(
+            (arg) => (arg.value as KeyValue).key === ARG_KEY_FIELD_NAME
+          )
+      ) ?? false;
+
+    // check if the field is a relation field AND it has the @relation attribute with reference field
+    return (
+      this.isLookupField(schema, field) &&
+      hasRelationAttributeWithRelationNameAndWithoutReferenceField &&
+      field
+    );
+  }
+
+  private isNotAnnotatedRelationField(schema: Schema, field: Field): boolean {
+    const modelList = schema.list.filter(
+      (item) => item.type === MODEL_TYPE_NAME
+    );
+
+    const relationAttribute =
+      field.attributes?.some((attr) => attr.name === RELATION_ATTRIBUTE_NAME) ??
+      false;
+
+    const hasRelationAttributeNameAndWithoutReferenceField =
+      field.attributes?.some(
+        (attr) =>
+          attr.name === RELATION_ATTRIBUTE_NAME &&
+          findRelationAttributeName(attr) &&
           !attr.args?.find(
             (arg) => (arg.value as KeyValue).key === ARG_KEY_FIELD_NAME
           )
@@ -759,9 +1056,111 @@ export class PrismaSchemaParserService {
     // or it has the @relation attribute but without reference field
     return (
       (fieldModelType && !relationAttribute) ||
-      (fieldModelType &&
-        hasRelationAttributeWithRelationNameAndWithoutReferenceField)
+      (fieldModelType && hasRelationAttributeNameAndWithoutReferenceField)
     );
+  }
+
+  private isManyToManyRelation(
+    schema: Schema,
+    model: Model,
+    field: Field
+  ): boolean {
+    let isManyToMany = false;
+    // check if the current field is a relation field that is not annotated and it is an array
+    const isCurrentFieldIsRelationArray =
+      this.isLookupField(schema, field) &&
+      this.isNotAnnotatedRelationField(schema, field) &&
+      field.array;
+
+    // if the current field is not an array, it can't be a many to many relation, exit the function and return false
+    if (!isCurrentFieldIsRelationArray) return isManyToMany;
+
+    const modelList = schema.list.filter(
+      (item) => item.type === MODEL_TYPE_NAME
+    ) as Model[];
+
+    const remoteModel = modelList.find(
+      (modelItem: Model) =>
+        formatModelName(modelItem.name) ===
+        formatModelName(field.fieldType as string)
+    );
+
+    if (!remoteModel) {
+      throw new Error(
+        `Remote model ${field.fieldType} not found for field ${field.name} on model ${model.name}`
+      );
+    }
+
+    const remoteModelFields = remoteModel.properties.filter(
+      (property) => property.type === FIELD_TYPE_NAME
+    ) as Field[];
+
+    // from the remote model fields, find the fields that are relations to the current model (it can be more than one field)
+    const remoteRelatedFields = remoteModelFields.filter(
+      (fieldItem: Field) =>
+        formatModelName(model.name) ===
+        formatModelName(fieldItem.fieldType as string)
+    );
+
+    if (!remoteRelatedFields.length) {
+      throw new Error(
+        `The other side of the relation not found for field ${field.name} on model ${model.name}`
+      );
+    }
+
+    if (remoteRelatedFields.length === 1) {
+      const isRemoteFieldIsRelationArray =
+        this.isLookupField(schema, remoteRelatedFields[0]) &&
+        this.isNotAnnotatedRelationField(schema, remoteRelatedFields[0]) &&
+        remoteRelatedFields[0].array;
+
+      isManyToMany = !!isRemoteFieldIsRelationArray;
+    }
+
+    if (remoteRelatedFields.length > 1) {
+      // compare between the relation name of the two sides
+      let currentFieldRelationAttributeName = null;
+      let remoteFieldRelationAttributeName = null;
+      const relationAttribute = field.attributes?.find(
+        (attr) => attr.name === RELATION_ATTRIBUTE_NAME
+      );
+
+      if (relationAttribute) {
+        currentFieldRelationAttributeName =
+          findRelationAttributeName(relationAttribute);
+      }
+
+      // loop over the otherSide array, for each field find the relation name and compare it to the relation name of the field
+      // if they are equal, it means that we found the other side of the relation
+      for (const [index, fieldItem] of remoteRelatedFields.entries()) {
+        const relationAttributeOnRemoteField = fieldItem.attributes?.find(
+          (attr) => attr.name === RELATION_ATTRIBUTE_NAME
+        );
+
+        if (relationAttributeOnRemoteField) {
+          remoteFieldRelationAttributeName = findRelationAttributeName(
+            relationAttributeOnRemoteField
+          );
+        }
+
+        const isCurrentFieldRelationAttrNameEqualRemoteFieldRelationAttrName =
+          currentFieldRelationAttributeName ===
+          remoteFieldRelationAttributeName;
+
+        const isRemoteFieldItemIsRelationArray =
+          this.isLookupField(schema, remoteRelatedFields[index]) &&
+          this.isNotAnnotatedRelationField(
+            schema,
+            remoteRelatedFields[index]
+          ) &&
+          remoteRelatedFields[index].array;
+
+        isManyToMany =
+          isCurrentFieldRelationAttrNameEqualRemoteFieldRelationAttrName &&
+          isRemoteFieldItemIsRelationArray;
+      }
+    }
+    return isManyToMany;
   }
 
   private isFkFieldOfARelation(
@@ -773,8 +1172,8 @@ export class PrismaSchemaParserService {
       (property) => property.type === FIELD_TYPE_NAME
     ) as Field[];
 
-    const relationFiledWithReference = modelFields.filter((modelField: Field) =>
-      modelField.attributes?.some(
+    const relationFiledWithReference = modelFields.find((modelField: Field) =>
+      modelField.attributes?.find(
         (attr) =>
           attr.name === "relation" &&
           attr.args?.some(
@@ -787,16 +1186,7 @@ export class PrismaSchemaParserService {
       )
     );
 
-    if (relationFiledWithReference.length > 1) {
-      this.logger.error(
-        `Field ${field.name} on model ${model.name} has more than one relation field`
-      );
-      this.logger.error(
-        `Field ${field.name} on model ${model.name} has more than one relation field`
-      );
-    }
-
-    return !!(relationFiledWithReference.length === 1);
+    return !!relationFiledWithReference;
   }
 
   /********************
@@ -821,7 +1211,10 @@ export class PrismaSchemaParserService {
       id: cuid(), // creating here the entity id because we need it for the relation
       name: model.name,
       displayName: modelDisplayName,
-      pluralDisplayName: entityPluralDisplayName,
+      pluralDisplayName:
+        entityPluralDisplayName === model.name
+          ? `${entityPluralDisplayName} Items`
+          : entityPluralDisplayName,
       description: "",
       customAttributes: entityAttributes,
       fields: [],
@@ -983,6 +1376,7 @@ export class PrismaSchemaParserService {
     );
 
     const properties = <types.DecimalNumber>{
+      databaseFieldType: DecimalNumberType[field.fieldType as string],
       minimumValue: 0,
       maximumValue: 99999999999,
       precision: 8,
@@ -1023,6 +1417,7 @@ export class PrismaSchemaParserService {
     );
 
     const properties = <types.WholeNumber>{
+      databaseFieldType: WholeNumberType[field.fieldType as string],
       minimumValue: 0,
       maximumValue: 99999999999,
     };
@@ -1130,12 +1525,12 @@ export class PrismaSchemaParserService {
     );
 
     const defaultIdAttribute = field.attributes?.find(
-      (attr) => attr.name === "default"
+      (attr) => attr.name === DEFAULT_ATTRIBUTE_NAME
     );
 
     if (!defaultIdAttribute) {
       const properties = <types.Id>{
-        idType: idTypePropertyMapByFieldType[field.fieldType as string],
+        idType: idTypePropertyMapByPrismaFieldType[field.fieldType as string],
       };
       entityField.properties = properties as unknown as {
         [key: string]: JsonValue;
@@ -1143,9 +1538,49 @@ export class PrismaSchemaParserService {
     }
 
     if (defaultIdAttribute && defaultIdAttribute.args) {
-      const idType = (defaultIdAttribute.args[0].value as Func).name || "cuid";
+      let idType: types.Id["idType"];
+      const defaultValue = defaultIdAttribute.args[0].value;
+      const defaultValueFunctionName = (defaultValue as Func).name;
+      const idTypeDefaultArg =
+        typeof defaultValue === "string"
+          ? defaultValue
+          : defaultValueFunctionName;
+      if (field.fieldType === PRISMA_TYPE_STRING) {
+        if (
+          idTypeDefaultArg === ID_DEFAULT_VALUE_CUID ||
+          idTypeDefaultArg === ID_DEFAULT_VALUE_CUID_FUNCTION
+        ) {
+          idType = ID_TYPE_CUID;
+        } else if (
+          idTypeDefaultArg === ID_DEFAULT_VALUE_UUID ||
+          idTypeDefaultArg === ID_DEFAULT_VALUE_UUID_FUNCTION
+        ) {
+          idType = ID_TYPE_UUID;
+        } else {
+          idType = ID_TYPE_CUID;
+        }
+      } else if (field.fieldType === PRISMA_TYPE_INT) {
+        if (
+          idTypeDefaultArg === ID_DEFAULT_VALUE_AUTO_INCREMENT ||
+          idTypeDefaultArg === ID_DEFAULT_VALUE_AUTO_INCREMENT_FUNCTION
+        ) {
+          idType = ID_TYPE_AUTO_INCREMENT;
+        }
+      } else if (field.fieldType === PRISMA_TYPE_BIG_INT) {
+        if (
+          idTypeDefaultArg === ID_DEFAULT_VALUE_AUTO_INCREMENT ||
+          idTypeDefaultArg === ID_DEFAULT_VALUE_AUTO_INCREMENT_FUNCTION
+        ) {
+          idType = ID_TYPE_AUTO_INCREMENT_BIG_INT;
+        }
+      }
+
+      if (!idType) {
+        idType = prismaIdTypeToDefaultIdType[field.fieldType as string];
+      }
+
       const properties = <types.Id>{
-        idType: idTypePropertyMap[idType],
+        idType,
       };
       entityField.properties = properties as unknown as {
         [key: string]: JsonValue;
@@ -1314,12 +1749,20 @@ export class PrismaSchemaParserService {
         (entity) => entity.name === remoteModel.name
       ) as CreateBulkEntitiesInput;
 
-      const fkFieldName = findFkFieldNameOnAnnotatedField(field);
+      const isManyToMany = this.isManyToManyRelation(schema, model, field);
+
+      const fkFieldName = !isManyToMany
+        ? findFkFieldNameOnAnnotatedField(field)
+        : "";
+
+      const fkHolder = !isManyToMany
+        ? entityField.permanentId // we are on the "main", annotated side of the relation, meaning that this field is the fkHolder
+        : null;
 
       const properties = <types.Lookup>{
         relatedEntityId: relatedEntity.id,
         allowMultipleSelection: field.array || false,
-        fkHolder: entityField.permanentId, // we are on the "main", annotated side of the relation, meaning that this field is the fkHolder
+        fkHolder,
         fkFieldName: fkFieldName,
       };
 
@@ -1336,8 +1779,8 @@ export class PrismaSchemaParserService {
       });
 
       void actionContext.onEmitUserActionLog(
-        EnumActionLogLevel.Error,
-        error.message
+        error.message,
+        EnumActionLogLevel.Error
       );
       throw error;
     }

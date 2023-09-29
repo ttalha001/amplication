@@ -165,6 +165,7 @@ const EntityFieldForm = ({
             )}
 
             <SchemaFields
+              fieldDataType={formik.values.dataType}
               schema={schema}
               resourceId={resourceId}
               entity={entity}
@@ -172,7 +173,6 @@ const EntityFieldForm = ({
 
             <TextField
               autoComplete="off"
-              disabled={isSystemDataType}
               placeholder="Custom Prisma Attributes"
               inputToolTip={{
                 content: (

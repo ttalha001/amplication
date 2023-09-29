@@ -107,22 +107,22 @@ export const EntityListItem = ({
 
   const handleConfirmDelete = useCallback(() => {
     setConfirmDelete(false);
-    const { serviceSettings } = resourceSettings;
-    const authEntity = serviceSettings.authEntityName;
 
-    if (authEntity === entity.name) {
-      const updateServiceSettings = {
-        ...serviceSettings,
-        authEntityName: null,
-      };
-      handleSubmit(updateServiceSettings);
-    }
+    const authEntity = resourceSettings?.serviceSettings?.authEntityName;
 
     deleteEntity({
       variables: {
         entityId: entity.id,
       },
     }).catch(onError);
+
+    if (authEntity === entity.name) {
+      const updateServiceSettings = {
+        ...resourceSettings?.serviceSettings,
+        authEntityName: null,
+      };
+      handleSubmit(updateServiceSettings);
+    }
   }, [entity, deleteEntity, onError]);
 
   const handleRowClick = useCallback(() => {
@@ -133,9 +133,9 @@ export const EntityListItem = ({
 
   const [latestVersion] = entity.versions || [];
 
-  const isAuthEntity =
-    entity.name === resourceSettings.serviceSettings.authEntityName ||
-    entity.name === USER_ENTITY;
+  const isAuthEntity = resourceSettings?.serviceSettings?.authEntityName
+    ? entity.name === resourceSettings?.serviceSettings?.authEntityName
+    : entity.name === USER_ENTITY;
 
   const isDeleteButtonDisable = isAuthEntity && isUserEntityMandatory;
 
