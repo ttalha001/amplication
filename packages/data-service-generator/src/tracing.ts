@@ -47,9 +47,7 @@ export class Tracing {
       segmentName,
       async (span) => {
         try {
-          const result = await fn(...args);
-          span.end();
-          return result;
+          return fn(...args);
         } catch (error) {
           span.recordException(error);
           span.setStatus({
