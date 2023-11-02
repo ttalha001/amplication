@@ -76,9 +76,8 @@ export async function createDataService(
       ]);
       await modules.mergeMany([serverModules, adminUIModules]);
     } else if (generateServer) {
-      await modules.merge(dtoModules);
       const serverModules = await createServer();
-      await modules.merge(serverModules);
+      await modules.mergeMany([dtoModules, serverModules]);
     } else if (generateAdminUI) {
       const adminUIModules = await createAdminModules();
       await modules.merge(adminUIModules);
