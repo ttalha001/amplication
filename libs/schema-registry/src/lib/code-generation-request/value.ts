@@ -1,5 +1,5 @@
 import { DSGResourceData } from "@amplication/code-gen-types";
-import { IsString, ValidateNested } from "class-validator";
+import { IsBoolean, IsString, ValidateNested } from "class-validator";
 
 export class Value {
   @IsString()
@@ -8,4 +8,8 @@ export class Value {
   resourceId!: string;
   @ValidateNested()
   dsgResourceData!: DSGResourceData;
+  @IsBoolean()
+  generateServer!: boolean;
+  @IsBoolean()
+  generateAdminUI!: boolean;
 }
