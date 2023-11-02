@@ -192,6 +192,7 @@ export class ServiceSettingsService {
         generateGraphQL: generateGraphQL,
         generateRestApi: generateRestApi,
         serverPath: serverPath,
+        generateServer: true,
       }),
       (settings.authEntityName = serviceSettings.authEntityName);
   }

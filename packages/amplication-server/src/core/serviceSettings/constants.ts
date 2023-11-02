@@ -19,6 +19,7 @@ export const DEFAULT_SERVICE_SETTINGS: ServiceSettingsValuesExtended = {
     generateGraphQL: true,
     generateRestApi: true,
     serverPath: "",
+    generateServer: true,
   },
   adminUISettings: {
     generateAdminUI: true,
