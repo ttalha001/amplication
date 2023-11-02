@@ -2017,6 +2017,7 @@ export enum Role {
 export type ServerSettings = {
   generateGraphQL: Scalars['Boolean']['output'];
   generateRestApi: Scalars['Boolean']['output'];
+  generateServer: Scalars['Boolean']['output'];
   serverPath: Scalars['String']['output'];
 };
 
