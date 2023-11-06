@@ -20,7 +20,7 @@ export class ServerSettings {
   serverPath!: string;
 
   @Field(() => Boolean, {
-    nullable: false,
+    nullable: true,
   })
-  generateServer!: boolean;
+  generateServer?: boolean;
 }
