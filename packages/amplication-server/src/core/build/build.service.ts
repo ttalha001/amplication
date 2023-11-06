@@ -425,11 +425,6 @@ export class BuildService {
           user
         );
 
-        const generateAdminUI =
-          dsgResourceData.resourceInfo.settings.adminUISettings.generateAdminUI;
-        const generateServer =
-          dsgResourceData.resourceInfo.settings.serverSettings.generateServer;
-
         logger.info("Writing build generation message to queue");
 
         const codeGenerationEvent: CodeGenerationRequest.KafkaEvent = {
@@ -438,8 +433,6 @@ export class BuildService {
             resourceId,
             buildId,
             dsgResourceData,
-            generateServer,
-            generateAdminUI,
           },
         };
 
