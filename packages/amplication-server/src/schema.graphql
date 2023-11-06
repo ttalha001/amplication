@@ -1401,7 +1401,7 @@ enum Role {
 type ServerSettings {
   generateGraphQL: Boolean!
   generateRestApi: Boolean!
-  generateServer: Boolean!
+  generateServer: Boolean
   serverPath: String!
 }
 
