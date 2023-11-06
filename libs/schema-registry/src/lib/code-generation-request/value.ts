@@ -8,8 +8,4 @@ export class Value {
   resourceId!: string;
   @ValidateNested()
   dsgResourceData!: DSGResourceData;
-  @IsBoolean()
-  generateServer!: boolean;
-  @IsBoolean()
-  generateAdminUI!: boolean;
 }
