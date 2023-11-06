@@ -18,19 +18,59 @@ export class BuildRunnerService {
     dsgResourceData: DSGResourceData,
     codeGeneratorVersion: string
   ) {
-    const savePath = join(
-      this.configService.get(Env.DSG_JOBS_BASE_FOLDER),
-      buildId,
-      this.configService.get(Env.DSG_JOBS_RESOURCE_DATA_FILE)
-    );
+    const generateServer =
+      dsgResourceData.resourceInfo.settings.serverSettings.generateServer;
+    const generateAdminUI =
+      dsgResourceData.resourceInfo.settings.adminUISettings.generateAdminUI;
 
-    const saveDir = dirname(savePath);
-    await fs.mkdir(saveDir, { recursive: true });
+    if (generateServer && generateAdminUI) {
+      const savePath = join(
+        this.configService.get(Env.DSG_JOBS_BASE_FOLDER),
+        buildId,
+        this.configService.get(Env.DSG_JOBS_RESOURCE_DATA_FILE)
+      );
 
-    await fs.writeFile(
-      savePath,
-      JSON.stringify({ ...dsgResourceData, codeGeneratorVersion })
-    );
+      const saveDir = dirname(savePath);
+      await fs.mkdir(saveDir, { recursive: true });
+
+      await fs.writeFile(
+        savePath,
+        JSON.stringify({ ...dsgResourceData, codeGeneratorVersion })
+      );
+    }
+
+    if (generateServer) {
+      const savePath = join(
+        this.configService.get(Env.DSG_JOBS_BASE_FOLDER),
+        buildId,
+        this.configService.get(Env.DSG_JOBS_RESOURCE_DATA_FILE)
+      );
+
+      const saveDir = dirname(savePath);
+      await fs.mkdir(saveDir, { recursive: true });
+
+      await fs.writeFile(
+        savePath,
+        JSON.stringify({ ...dsgResourceData, codeGeneratorVersion })
+      );
+    }
+
+    if (generateAdminUI) {
+      const savePath = join(
+        this.configService.get(Env.DSG_JOBS_BASE_FOLDER),
+        buildId,
+        "admin-ui",
+        this.configService.get(Env.DSG_JOBS_RESOURCE_DATA_FILE)
+      );
+
+      const saveDir = dirname(savePath);
+      await fs.mkdir(saveDir, { recursive: true });
+
+      await fs.writeFile(
+        savePath,
+        JSON.stringify({ ...dsgResourceData, codeGeneratorVersion })
+      );
+    }
   }
 
   async getCodeGeneratorVersion(buildId: string) {

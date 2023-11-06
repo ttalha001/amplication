@@ -12,8 +12,8 @@ export class BuildLoggerController {
     @Body() logEntry: CodeGenerationLogRequestDto
   ): Promise<void> {
     const logEvent: CodeGenerationLog.KafkaEvent = {
-      key: { buildId: logEntry.buildId },
-      value: logEntry,
+      key: { buildId: logEntry.buildId.replace("-server", "") },
+      value: { ...logEntry, buildId: logEntry.buildId.replace("-server", "") },
     };
     await this.producerService.emitMessage(
       KAFKA_TOPICS.DSG_LOG_TOPIC,

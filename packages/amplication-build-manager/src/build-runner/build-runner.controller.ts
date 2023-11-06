@@ -108,6 +108,7 @@ export class BuildRunnerController {
           });
       }
 
+      message.buildId = `${message.buildId}-server`;
       await this.buildRunnerService.saveDsgResourceData(
         message.buildId,
         message.dsgResourceData,
