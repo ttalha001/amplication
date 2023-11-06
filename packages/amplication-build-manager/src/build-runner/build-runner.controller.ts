@@ -115,48 +115,20 @@ export class BuildRunnerController {
       );
 
       const url = this.configService.get(Env.DSG_RUNNER_URL);
-      if (message.generateServer && message.generateAdminUI) {
-        // spin up two dsg jobs
-        const serverUrl = `${url}/server`;
-        const adminUIUrl = `${url}/admin-ui`;
-        try {
-          await axios.post(serverUrl, {
-            resourceId: message.resourceId,
-            buildId: message.buildId,
-            containerImageTag,
-          });
-
-          await axios.post(adminUIUrl, {
-            resourceId: message.resourceId,
-            buildId: message.buildId,
-            containerImageTag,
-          });
-        } catch (error) {
-          throw new Error(error.message, {
-            cause: {
-              code: error.response?.status,
-              message: error.response?.data?.message,
-              data: error.config?.data,
-            },
-          });
-        }
-      } else {
-        // else spin up one dsg job
-        try {
-          await axios.post(url, {
-            resourceId: message.resourceId,
-            buildId: message.buildId,
-            containerImageTag,
-          });
-        } catch (error) {
-          throw new Error(error.message, {
-            cause: {
-              code: error.response?.status,
-              message: error.response?.data?.message,
-              data: error.config?.data,
-            },
-          });
-        }
+      try {
+        await axios.post(url, {
+          resourceId: message.resourceId,
+          buildId: message.buildId,
+          containerImageTag,
+        });
+      } catch (error) {
+        throw new Error(error.message, {
+          cause: {
+            code: error.response?.status,
+            message: error.response?.data?.message,
+            data: error.config?.data,
+          },
+        });
       }
     } catch (error) {
       this.logger.error(error.message, error);
