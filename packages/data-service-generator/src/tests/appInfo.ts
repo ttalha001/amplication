@@ -21,6 +21,7 @@ export const appInfo: AppInfo = {
   url: "https://app.amplication.com/ckl0ow1xj00763cjnch10k6mc",
   settings: {
     authProvider: EnumAuthProviderType.Http,
+    authEntityName: "User",
     serverSettings: {
       generateGraphQL: true,
       generateRestApi: true,
